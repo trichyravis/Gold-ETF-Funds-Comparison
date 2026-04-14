@@ -72,6 +72,48 @@ st.html(f"""
     .stMultiSelect div[data-baseweb="select"] span {{
         color: {TEXT} !important; -webkit-text-fill-color: {TEXT} !important;
     }}
+
+    /* ── Selectbox DROPDOWN (popover/menu) contrast fix ── */
+    div[data-baseweb="popover"] {{
+        background-color: #1e2d42 !important;
+    }}
+    div[data-baseweb="popover"] li,
+    div[data-baseweb="popover"] li span,
+    div[data-baseweb="popover"] ul li,
+    div[data-baseweb="menu"] li,
+    div[data-baseweb="menu"] li span,
+    [data-baseweb="menu"] [role="option"],
+    [data-baseweb="menu"] [role="option"] span {{
+        color: {TEXT} !important;
+        -webkit-text-fill-color: {TEXT} !important;
+        background-color: transparent !important;
+    }}
+    [data-baseweb="menu"] [role="option"]:hover,
+    [data-baseweb="menu"] [role="option"][aria-selected="true"] {{
+        background-color: rgba(255,215,0,0.12) !important;
+        color: {GOLD} !important;
+        -webkit-text-fill-color: {GOLD} !important;
+    }}
+    /* Selected value inside the selectbox input area */
+    div[data-baseweb="select"] > div {{
+        background-color: rgba(0,51,102,0.5) !important;
+        border-color: rgba(255,215,0,0.3) !important;
+    }}
+    div[data-baseweb="select"] > div > div {{
+        color: {TEXT} !important;
+        -webkit-text-fill-color: {TEXT} !important;
+    }}
+    /* Multiselect tags */
+    span[data-baseweb="tag"] {{
+        background-color: rgba(255,215,0,0.15) !important;
+        color: {GOLD} !important;
+        -webkit-text-fill-color: {GOLD} !important;
+    }}
+    /* Input text in search within selectbox */
+    div[data-baseweb="select"] input {{
+        color: {TEXT} !important;
+        -webkit-text-fill-color: {TEXT} !important;
+    }}
     .stRadio div[role="radiogroup"] label span {{
         color: {TEXT} !important; -webkit-text-fill-color: {TEXT} !important;
     }}
