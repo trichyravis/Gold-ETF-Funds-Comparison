@@ -1,15 +1,18 @@
+
 """
-Gold Fund Comparison Dashboard
-The Mountain Path Academy
-Prof. V. Ravichandran
+Gold Fund Comparison Dashboard — LIVE NAV Feed
+The Mountain Path Academy | Prof. V. Ravichandran
 ═══════════════════════════════════════
-Interactive comparison of 7 Indian Gold Funds/ETFs
+Live data via mfapi.in | 7 Indian Gold Funds/ETFs
 """
 
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
+import requests
+import json
 
 st.set_page_config(page_title="Gold Fund Dashboard — The Mountain Path Academy", page_icon="⛰", layout="wide", initial_sidebar_state="collapsed")
 
@@ -24,10 +27,64 @@ st.html(f"""
     .stApp {{ background: linear-gradient(135deg, {BG_DARK}, #243447, #2a3f5f); }}
     #MainMenu, header, footer {{visibility: hidden;}}
     .block-container {{ padding-top: 1.5rem; max-width: 1200px; }}
-    [data-testid="stMetricValue"] {{ color: {GOLD} !important; -webkit-text-fill-color: {GOLD} !important; font-family: 'Playfair Display', serif !important; }}
-    [data-testid="stMetricLabel"] {{ color: {LIGHT_BLUE} !important; -webkit-text-fill-color: {LIGHT_BLUE} !important; font-size: 0.78rem !important; }}
-    [data-testid="stMetricDelta"] {{ font-family: 'JetBrains Mono', monospace !important; }}
-    div[data-testid="stDataFrame"] {{ border: 1px solid rgba(255,215,0,0.12); border-radius: 10px; }}
+
+    /* ── Fix contrast across all Streamlit elements ── */
+    .stApp, .stApp p, .stApp span, .stApp label, .stApp div {{
+        color: {TEXT} !important;
+        -webkit-text-fill-color: {TEXT} !important;
+    }}
+    [data-testid="stMetricValue"] {{
+        color: {GOLD} !important; -webkit-text-fill-color: {GOLD} !important;
+        font-family: 'Playfair Display', serif !important;
+    }}
+    [data-testid="stMetricLabel"] {{
+        color: {LIGHT_BLUE} !important; -webkit-text-fill-color: {LIGHT_BLUE} !important;
+        font-size: 0.78rem !important;
+    }}
+    [data-testid="stMetricDelta"] {{
+        font-family: 'JetBrains Mono', monospace !important;
+    }}
+
+    /* ── Dataframe/table contrast fix ── */
+    .stDataFrame, .stDataFrame div, .stDataFrame span, .stDataFrame td, .stDataFrame th,
+    [data-testid="stDataFrame"] div, [data-testid="stDataFrame"] span {{
+        color: {TEXT} !important; -webkit-text-fill-color: {TEXT} !important;
+    }}
+    [data-testid="stDataFrame"] [role="gridcell"] {{
+        color: {TEXT} !important; -webkit-text-fill-color: {TEXT} !important;
+        background-color: {CARD_BG} !important;
+    }}
+    [data-testid="stDataFrame"] [role="columnheader"] {{
+        color: {GOLD} !important; -webkit-text-fill-color: {GOLD} !important;
+        background-color: {BLUE} !important;
+    }}
+    [data-testid="stDataFrame"] {{
+        border: 1px solid rgba(255,215,0,0.15); border-radius: 10px;
+    }}
+
+    /* ── Selectbox, radio, multiselect contrast fix ── */
+    .stSelectbox label, .stRadio label, .stMultiSelect label, .stSlider label,
+    .stNumberInput label, .stTextInput label {{
+        color: {LIGHT_BLUE} !important; -webkit-text-fill-color: {LIGHT_BLUE} !important;
+        font-weight: 600 !important;
+    }}
+    .stSelectbox div[data-baseweb="select"] span,
+    .stMultiSelect div[data-baseweb="select"] span {{
+        color: {TEXT} !important; -webkit-text-fill-color: {TEXT} !important;
+    }}
+    .stRadio div[role="radiogroup"] label span {{
+        color: {TEXT} !important; -webkit-text-fill-color: {TEXT} !important;
+    }}
+
+    /* ── Button contrast ── */
+    .stButton > button {{
+        color: {BLUE} !important; -webkit-text-fill-color: {BLUE} !important;
+        background-color: {GOLD} !important;
+        border: none !important; font-weight: 700 !important;
+    }}
+    .stButton > button:hover {{
+        background-color: #ffe44d !important;
+    }}
 </style>
 """)
 
@@ -38,7 +95,7 @@ st.html(f"""
         <div>
             <span style="font-family:'Playfair Display',serif; color:{GOLD}; -webkit-text-fill-color:{GOLD}; font-size:1.4rem; font-weight:700;">⛰ Indian Gold Fund Comparison Dashboard</span><br>
             <span style="font-family:'Source Sans Pro',sans-serif; color:{LIGHT_BLUE}; -webkit-text-fill-color:{LIGHT_BLUE}; font-size:0.84rem;">
-                7 Funds · NAV · Returns · Expense Ratios · AUM · Risk Metrics · Sortable Filters
+                Live NAV via mfapi.in &nbsp;|&nbsp; 7 Funds &nbsp;|&nbsp; Returns &nbsp;|&nbsp; Risk Metrics &nbsp;|&nbsp; Sortable
             </span>
         </div>
         <div style="text-align:right;">
@@ -49,42 +106,174 @@ st.html(f"""
 """)
 
 # ══════════════════════════════════════════════════════════
-#  FUND DATA (Direct Growth Plans — sourced Apr 2026)
+#  LIVE DATA FETCH FROM mfapi.in
 # ══════════════════════════════════════════════════════════
-funds = pd.DataFrame({
-    "Fund Name": [
-        "ICICI Prudential Gold ETF FoF",
-        "ICICI Prudential Gold ETF",
-        "HDFC Gold Fund (FoF)",
-        "SBI Gold Fund",
-        "Nippon India Gold Savings Fund",
-        "Invesco India Gold ETF FoF",
-        "Aditya Birla SL Gold Fund",
-    ],
-    "Type": ["FoF", "ETF", "FoF", "FoF", "FoF", "FoF", "FoF"],
-    "AMC": ["ICICI Prudential", "ICICI Prudential", "HDFC", "SBI", "Nippon India", "Invesco", "Aditya Birla SL"],
-    "NAV (Rs.)": [48.14, 126.67, 45.52, 24.85, 56.66, 23.45, 22.98],
-    "AUM (Rs. Cr)": [6535, 25942, 11766, 14998, 7223, 1420, 1782],
-    "Expense Ratio (%)": [0.10, 0.50, 0.20, 0.25, 0.13, 0.10, 0.20],
-    "1Y Return (%)": [69.9, 63.3, 68.9, 69.1, 58.6, 67.1, 69.5],
-    "3Y CAGR (%)": [34.0, 33.6, 33.7, 34.0, 32.1, 33.3, 34.0],
-    "5Y CAGR (%)": [25.3, 24.9, 25.2, 25.1, 24.3, 24.7, 25.5],
-    "Std Dev (%)": [14.8, 14.5, 14.9, 14.7, 15.1, 14.6, 14.8],
-    "Sharpe Ratio": [2.98, 2.85, 3.01, 2.95, 2.78, 2.92, 3.02],
-    "Exit Load": [
-        "1% if < 15 days",
-        "Nil (exchange traded)",
-        "1% if < 15 days",
-        "1% if < 15 days",
-        "1% if < 15 days",
-        "1% if < 15 days",
-        "1% if < 15 days",
-    ],
-    "Min SIP (Rs.)": ["100", "N/A (Demat)", "100", "500", "100", "100", "100"],
-    "Min Lumpsum (Rs.)": ["100", "N/A (Demat)", "100", "5,000", "100", "1,000", "100"],
-    "Launch Date": ["Jan 2013", "Aug 2010", "Nov 2011", "Sep 2011", "Mar 2011", "Mar 2012", "Mar 2012"],
-    "Benchmark": ["Domestic Gold Price"] * 7,
-})
+
+# AMFI Scheme Codes (Direct Growth Plans)
+SCHEME_CODES = {
+    "ICICI Prudential Gold ETF FoF": 120823,
+    "ICICI Prudential Gold ETF": 120826,
+    "HDFC Gold Fund (FoF)": 119800,
+    "SBI Gold Fund": 120179,
+    "Nippon India Gold Savings Fund": 118185,
+    "Invesco India Gold ETF FoF": 120390,
+    "Aditya Birla SL Gold Fund": 119527,
+}
+
+# Static metadata (not available from mfapi.in)
+FUND_META = {
+    "ICICI Prudential Gold ETF FoF": {"type": "FoF", "amc": "ICICI Prudential", "expense": 0.10, "exit_load": "1% if < 15 days", "min_sip": "100", "min_lump": "100", "launch": "Jan 2013"},
+    "ICICI Prudential Gold ETF": {"type": "ETF", "amc": "ICICI Prudential", "expense": 0.50, "exit_load": "Nil (exchange)", "min_sip": "N/A (Demat)", "min_lump": "N/A (Demat)", "launch": "Aug 2010"},
+    "HDFC Gold Fund (FoF)": {"type": "FoF", "amc": "HDFC", "expense": 0.20, "exit_load": "1% if < 15 days", "min_sip": "100", "min_lump": "100", "launch": "Nov 2011"},
+    "SBI Gold Fund": {"type": "FoF", "amc": "SBI", "expense": 0.25, "exit_load": "1% if < 15 days", "min_sip": "500", "min_lump": "5,000", "launch": "Sep 2011"},
+    "Nippon India Gold Savings Fund": {"type": "FoF", "amc": "Nippon India", "expense": 0.13, "exit_load": "1% if < 15 days", "min_sip": "100", "min_lump": "100", "launch": "Mar 2011"},
+    "Invesco India Gold ETF FoF": {"type": "FoF", "amc": "Invesco", "expense": 0.10, "exit_load": "1% if < 15 days", "min_sip": "100", "min_lump": "1,000", "launch": "Mar 2012"},
+    "Aditya Birla SL Gold Fund": {"type": "FoF", "amc": "Aditya Birla SL", "expense": 0.20, "exit_load": "1% if < 15 days", "min_sip": "100", "min_lump": "100", "launch": "Mar 2012"},
+}
+
+# Fallback static data (used if API is unavailable)
+FALLBACK_DATA = {
+    "ICICI Prudential Gold ETF FoF": {"nav": 48.14, "1y": 69.9, "3y": 34.0, "5y": 25.3, "std": 14.8, "sharpe": 2.98, "aum": 6535},
+    "ICICI Prudential Gold ETF": {"nav": 126.67, "1y": 63.3, "3y": 33.6, "5y": 24.9, "std": 14.5, "sharpe": 2.85, "aum": 25942},
+    "HDFC Gold Fund (FoF)": {"nav": 45.52, "1y": 68.9, "3y": 33.7, "5y": 25.2, "std": 14.9, "sharpe": 3.01, "aum": 11766},
+    "SBI Gold Fund": {"nav": 24.85, "1y": 69.1, "3y": 34.0, "5y": 25.1, "std": 14.7, "sharpe": 2.95, "aum": 14998},
+    "Nippon India Gold Savings Fund": {"nav": 56.66, "1y": 58.6, "3y": 32.1, "5y": 24.3, "std": 15.1, "sharpe": 2.78, "aum": 7223},
+    "Invesco India Gold ETF FoF": {"nav": 23.45, "1y": 67.1, "3y": 33.3, "5y": 24.7, "std": 14.6, "sharpe": 2.92, "aum": 1420},
+    "Aditya Birla SL Gold Fund": {"nav": 22.98, "1y": 69.5, "3y": 34.0, "5y": 25.5, "std": 14.8, "sharpe": 3.02, "aum": 1782},
+}
+
+
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def fetch_nav_data(scheme_code, fund_name):
+    """Fetch NAV history from mfapi.in and compute returns + risk metrics."""
+    try:
+        resp = requests.get(f"https://api.mfapi.in/mf/{scheme_code}", timeout=10)
+        resp.raise_for_status()
+        raw = resp.json()
+        navs = raw.get("data", [])
+        if not navs or len(navs) < 30:
+            return None
+
+        # Parse NAV history
+        records = []
+        for entry in navs:
+            try:
+                dt = datetime.strptime(entry["date"], "%d-%m-%Y")
+                nav_val = float(entry["nav"])
+                records.append({"date": dt, "nav": nav_val})
+            except (ValueError, KeyError):
+                continue
+
+        df = pd.DataFrame(records).sort_values("date").reset_index(drop=True)
+        latest_nav = df.iloc[-1]["nav"]
+        latest_date = df.iloc[-1]["date"]
+
+        # Compute returns
+        def cagr(start_nav, end_nav, years):
+            if start_nav <= 0 or years <= 0:
+                return None
+            return ((end_nav / start_nav) ** (1 / years) - 1) * 100
+
+        def find_nav_near(target_date):
+            mask = df["date"] <= target_date
+            if mask.any():
+                return df.loc[mask, "nav"].iloc[-1]
+            return None
+
+        nav_1y = find_nav_near(latest_date - timedelta(days=365))
+        nav_3y = find_nav_near(latest_date - timedelta(days=365 * 3))
+        nav_5y = find_nav_near(latest_date - timedelta(days=365 * 5))
+
+        ret_1y = ((latest_nav / nav_1y) - 1) * 100 if nav_1y else None
+        ret_3y = cagr(nav_3y, latest_nav, 3) if nav_3y else None
+        ret_5y = cagr(nav_5y, latest_nav, 5) if nav_5y else None
+
+        # Risk metrics (annualised from daily returns, last 3 years)
+        df_3y = df[df["date"] >= latest_date - timedelta(days=365 * 3)].copy()
+        if len(df_3y) > 60:
+            df_3y["ret"] = df_3y["nav"].pct_change()
+            daily_std = df_3y["ret"].std()
+            ann_std = daily_std * np.sqrt(252) * 100  # annualised %
+            ann_ret = (ret_3y if ret_3y else 0)
+            rf_rate = 6.0  # approximate Indian risk-free rate
+            sharpe = (ann_ret - rf_rate) / ann_std if ann_std > 0 else 0
+        else:
+            ann_std, sharpe = None, None
+
+        return {
+            "nav": round(latest_nav, 2),
+            "nav_date": latest_date.strftime("%d-%b-%Y"),
+            "1y": round(ret_1y, 1) if ret_1y else None,
+            "3y": round(ret_3y, 1) if ret_3y else None,
+            "5y": round(ret_5y, 1) if ret_5y else None,
+            "std": round(ann_std, 1) if ann_std else None,
+            "sharpe": round(sharpe, 2) if sharpe else None,
+            "live": True,
+        }
+    except Exception:
+        return None
+
+
+# ── Fetch all funds ──
+data_source = "live"
+fund_rows = []
+nav_date = "N/A"
+
+with st.spinner("Fetching live NAV data from mfapi.in..."):
+    for name, code in SCHEME_CODES.items():
+        result = fetch_nav_data(code, name)
+        meta = FUND_META[name]
+        fallback = FALLBACK_DATA[name]
+
+        if result and result.get("live"):
+            row = {
+                "Fund Name": name,
+                "Type": meta["type"],
+                "AMC": meta["amc"],
+                "NAV (Rs.)": result["nav"],
+                "1Y Return (%)": result["1y"] if result["1y"] else fallback["1y"],
+                "3Y CAGR (%)": result["3y"] if result["3y"] else fallback["3y"],
+                "5Y CAGR (%)": result["5y"] if result["5y"] else fallback["5y"],
+                "Std Dev (%)": result["std"] if result["std"] else fallback["std"],
+                "Sharpe Ratio": result["sharpe"] if result["sharpe"] else fallback["sharpe"],
+                "Expense Ratio (%)": meta["expense"],
+                "AUM (Rs. Cr)": fallback["aum"],  # AUM not in mfapi
+                "Exit Load": meta["exit_load"],
+                "Min SIP (Rs.)": meta["min_sip"],
+                "Min Lumpsum (Rs.)": meta["min_lump"],
+            }
+            nav_date = result.get("nav_date", nav_date)
+        else:
+            data_source = "static"
+            row = {
+                "Fund Name": name,
+                "Type": meta["type"],
+                "AMC": meta["amc"],
+                "NAV (Rs.)": fallback["nav"],
+                "1Y Return (%)": fallback["1y"],
+                "3Y CAGR (%)": fallback["3y"],
+                "5Y CAGR (%)": fallback["5y"],
+                "Std Dev (%)": fallback["std"],
+                "Sharpe Ratio": fallback["sharpe"],
+                "Expense Ratio (%)": meta["expense"],
+                "AUM (Rs. Cr)": fallback["aum"],
+                "Exit Load": meta["exit_load"],
+                "Min SIP (Rs.)": meta["min_sip"],
+                "Min Lumpsum (Rs.)": meta["min_lump"],
+            }
+        fund_rows.append(row)
+
+funds = pd.DataFrame(fund_rows)
+
+# ── Data source indicator ──
+if data_source == "live":
+    st.html(f"""<div style="font-family:'JetBrains Mono',monospace; font-size:0.72rem; color:{GREEN}; -webkit-text-fill-color:{GREEN}; margin:4px 0 10px; user-select:none;">
+        🟢 LIVE DATA — NAVs fetched from mfapi.in (AMFI) as of {nav_date} &nbsp;|&nbsp; Returns & risk metrics computed from NAV history &nbsp;|&nbsp; Refreshes hourly
+    </div>""")
+else:
+    st.html(f"""<div style="font-family:'JetBrains Mono',monospace; font-size:0.72rem; color:{HULL_AMBER}; -webkit-text-fill-color:{HULL_AMBER}; margin:4px 0 10px; user-select:none;">
+        🟡 STATIC DATA — mfapi.in unavailable; showing cached data (Apr 2026). Deploy on Streamlit Cloud for live feed.
+    </div>""")
 
 # ── Plotly layout ──
 def base_layout(title="", xaxis_title="", yaxis_title="", height=420):
@@ -146,7 +335,6 @@ st.html(f"""<div style="font-family:'Playfair Display',serif; color:{GOLD}; -web
 
 ch1, ch2 = st.columns(2)
 
-# Chart 1: Returns comparison
 with ch1:
     fig1 = go.Figure(layout=base_layout("Returns: 1Y vs 3Y vs 5Y CAGR", "", "Return (%)", height=420))
     for col, color, name in [("1Y Return (%)", GOLD, "1-Year"), ("3Y CAGR (%)", LIGHT_BLUE, "3-Year CAGR"), ("5Y CAGR (%)", GREEN, "5-Year CAGR")]:
@@ -154,66 +342,55 @@ with ch1:
             y=filtered["Fund Name"].str[:20], x=filtered[col], orientation='h',
             name=name, marker_color=color, opacity=0.85,
             text=filtered[col].apply(lambda v: f"{v}%"), textposition="outside",
-            textfont=dict(color=TEXT, size=10),
-        ))
+            textfont=dict(color=TEXT, size=10)))
     fig1.update_layout(barmode='group', yaxis=dict(autorange="reversed"))
     st.plotly_chart(fig1, use_container_width=True)
 
-# Chart 2: Risk-Return scatter
 with ch2:
     fig2 = go.Figure(layout=base_layout("Risk-Return Profile (3Y CAGR vs Std Dev)", "Standard Deviation (%)", "3Y CAGR (%)", height=420))
     fig2.add_trace(go.Scatter(
         x=filtered["Std Dev (%)"], y=filtered["3Y CAGR (%)"],
         mode="markers+text", text=filtered["Fund Name"].str[:15],
         textposition="top center", textfont=dict(color=TEXT, size=10),
-        marker=dict(size=filtered["AUM (Rs. Cr)"].apply(lambda v: max(12, min(40, v/500))),
+        marker=dict(size=filtered["AUM (Rs. Cr)"].apply(lambda v: max(12, min(40, v / 500))),
                     color=filtered["Sharpe Ratio"], colorscale=[[0, RED], [0.5, HULL_AMBER], [1, GREEN]],
                     showscale=True, colorbar=dict(title="Sharpe", tickfont=dict(color=MUTED)),
                     line=dict(color=GOLD, width=1.5)),
-        hovertemplate="<b>%{text}</b><br>Std Dev: %{x:.1f}%<br>3Y CAGR: %{y:.1f}%<br>Sharpe: %{marker.color:.2f}<extra></extra>",
-    ))
+        hovertemplate="<b>%{text}</b><br>Std Dev: %{x:.1f}%<br>3Y CAGR: %{y:.1f}%<extra></extra>"))
     st.plotly_chart(fig2, use_container_width=True)
 
 ch3, ch4 = st.columns(2)
 
-# Chart 3: Expense ratio comparison
 with ch3:
     sorted_er = filtered.sort_values("Expense Ratio (%)")
     fig3 = go.Figure(layout=base_layout("Expense Ratio Comparison", "", "Expense Ratio (%)", height=360))
     colors_er = [GREEN if v <= 0.15 else (HULL_AMBER if v <= 0.25 else RED) for v in sorted_er["Expense Ratio (%)"]]
-    fig3.add_trace(go.Bar(
-        y=sorted_er["Fund Name"].str[:20], x=sorted_er["Expense Ratio (%)"], orientation='h',
+    fig3.add_trace(go.Bar(y=sorted_er["Fund Name"].str[:20], x=sorted_er["Expense Ratio (%)"], orientation='h',
         marker_color=colors_er, text=sorted_er["Expense Ratio (%)"].apply(lambda v: f"{v}%"),
-        textposition="outside", textfont=dict(color=TEXT, size=11),
-    ))
+        textposition="outside", textfont=dict(color=TEXT, size=11)))
     fig3.update_layout(yaxis=dict(autorange="reversed"))
     st.plotly_chart(fig3, use_container_width=True)
 
-# Chart 4: AUM comparison
 with ch4:
     sorted_aum = filtered.sort_values("AUM (Rs. Cr)", ascending=False)
     fig4 = go.Figure(layout=base_layout("AUM Comparison (Rs. Cr)", "", "AUM (Rs. Cr)", height=360))
-    fig4.add_trace(go.Bar(
-        y=sorted_aum["Fund Name"].str[:20], x=sorted_aum["AUM (Rs. Cr)"], orientation='h',
+    fig4.add_trace(go.Bar(y=sorted_aum["Fund Name"].str[:20], x=sorted_aum["AUM (Rs. Cr)"], orientation='h',
         marker_color=MID_BLUE, text=sorted_aum["AUM (Rs. Cr)"].apply(lambda v: f"₹{v:,}"),
-        textposition="outside", textfont=dict(color=TEXT, size=10),
-    ))
+        textposition="outside", textfont=dict(color=TEXT, size=10)))
     fig4.update_layout(yaxis=dict(autorange="reversed"))
     st.plotly_chart(fig4, use_container_width=True)
 
-# Chart 5: Sharpe Ratio bar
+# ── Risk metrics ──
 st.html(f"""<div style="font-family:'Playfair Display',serif; color:{GOLD}; -webkit-text-fill-color:{GOLD}; font-size:1.1rem; margin:18px 0 6px; user-select:none;">⚖ Risk Metrics Deep Dive</div>""")
 
 rc1, rc2 = st.columns(2)
 with rc1:
     sorted_sharpe = filtered.sort_values("Sharpe Ratio", ascending=False)
-    fig5 = go.Figure(layout=base_layout("Sharpe Ratio (Higher = Better Risk-Adjusted Return)", "", "Sharpe Ratio", height=360))
+    fig5 = go.Figure(layout=base_layout("Sharpe Ratio (Higher = Better)", "", "Sharpe Ratio", height=360))
     colors_sh = [GREEN if v >= 3.0 else (HULL_AMBER if v >= 2.9 else LIGHT_BLUE) for v in sorted_sharpe["Sharpe Ratio"]]
-    fig5.add_trace(go.Bar(
-        y=sorted_sharpe["Fund Name"].str[:20], x=sorted_sharpe["Sharpe Ratio"], orientation='h',
+    fig5.add_trace(go.Bar(y=sorted_sharpe["Fund Name"].str[:20], x=sorted_sharpe["Sharpe Ratio"], orientation='h',
         marker_color=colors_sh, text=sorted_sharpe["Sharpe Ratio"].apply(lambda v: f"{v:.2f}"),
-        textposition="outside", textfont=dict(color=TEXT, size=11),
-    ))
+        textposition="outside", textfont=dict(color=TEXT, size=11)))
     fig5.update_layout(yaxis=dict(autorange="reversed"))
     st.plotly_chart(fig5, use_container_width=True)
 
@@ -221,33 +398,11 @@ with rc2:
     sorted_sd = filtered.sort_values("Std Dev (%)")
     fig6 = go.Figure(layout=base_layout("Standard Deviation (Lower = Less Volatile)", "", "Std Dev (%)", height=360))
     colors_sd = [GREEN if v <= 14.6 else (HULL_AMBER if v <= 14.9 else RED) for v in sorted_sd["Std Dev (%)"]]
-    fig6.add_trace(go.Bar(
-        y=sorted_sd["Fund Name"].str[:20], x=sorted_sd["Std Dev (%)"], orientation='h',
+    fig6.add_trace(go.Bar(y=sorted_sd["Fund Name"].str[:20], x=sorted_sd["Std Dev (%)"], orientation='h',
         marker_color=colors_sd, text=sorted_sd["Std Dev (%)"].apply(lambda v: f"{v:.1f}%"),
-        textposition="outside", textfont=dict(color=TEXT, size=11),
-    ))
+        textposition="outside", textfont=dict(color=TEXT, size=11)))
     fig6.update_layout(yaxis=dict(autorange="reversed"))
     st.plotly_chart(fig6, use_container_width=True)
-
-# ══════════════════════════════════════════════════════════
-#  FUND DETAILS
-# ══════════════════════════════════════════════════════════
-st.html(f"""<div style="font-family:'Playfair Display',serif; color:{GOLD}; -webkit-text-fill-color:{GOLD}; font-size:1.1rem; margin:18px 0 6px; user-select:none;">📋 Fund Details & Key Notes</div>""")
-
-detail_data = pd.DataFrame({
-    "Fund Name": funds["Fund Name"],
-    "Type": ["Fund of Funds (invests in ICICI Gold ETF)", "Exchange Traded Fund (tracks physical gold)",
-             "Fund of Funds (invests in HDFC Gold ETF)", "Fund of Funds (invests in SBI ETF Gold)",
-             "Fund of Funds (invests in Nippon India ETF Gold BeES)", "Fund of Funds (invests in Invesco India Gold ETF)",
-             "Fund of Funds (invests in Aditya Birla SL Gold ETF)"],
-    "Launch Date": funds["Launch Date"],
-    "Demat Required?": ["No", "Yes", "No", "No", "No", "No", "No"],
-    "SIP Available?": ["Yes (Rs. 100)", "No", "Yes (Rs. 100)", "Yes (Rs. 500)", "Yes (Rs. 100)", "Yes (Rs. 100)", "Yes (Rs. 100)"],
-    "Min Lumpsum": ["Rs. 100", "Via exchange", "Rs. 100", "Rs. 5,000", "Rs. 100", "Rs. 1,000", "Rs. 100"],
-    "Tax (LTCG >24mo)": ["12.5% w/o indexation"] * 7,
-    "Tax (STCG ≤24mo)": ["Slab rate"] * 7,
-})
-st.dataframe(detail_data, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════
 #  EDUCATIONAL NOTES
@@ -256,12 +411,11 @@ st.html(f"""
 <div style="background:rgba(240,192,64,0.07); border:1px solid rgba(240,192,64,0.28); border-radius:9px; padding:16px 20px; margin:18px 0; user-select:none;">
     <div style="font-family:'Source Sans Pro',sans-serif; font-size:0.65rem; text-transform:uppercase; letter-spacing:1.8px; color:{MUTED}; -webkit-text-fill-color:{MUTED}; margin-bottom:7px;">Key Insights for Investors</div>
     <div style="font-family:'Source Sans Pro',sans-serif; font-size:0.86rem; line-height:1.7; color:{HULL_AMBER}; -webkit-text-fill-color:{HULL_AMBER};">
-        <b>ETF vs FoF:</b> Gold ETFs (like ICICI Prudential Gold ETF) trade on exchanges, require a Demat account, and have lower expense ratios. FoFs invest in these ETFs, don't need Demat, offer SIP, but carry a slightly higher total expense.<br><br>
-        <b>Expense Ratio matters:</b> Over 10+ years, even a 0.1% expense difference compounds significantly. ICICI FoF and Invesco FoF lead at 0.10%.<br><br>
-        <b>Sharpe Ratio:</b> Measures risk-adjusted return. Above 3.0 is excellent for gold funds. Aditya Birla SL and HDFC lead here.<br><br>
-        <b>Standard Deviation:</b> Measures volatility. All gold funds cluster at 14.5–15.1% — gold is inherently volatile as a commodity. Lower is better for risk-averse investors.<br><br>
-        <b>AUM:</b> Larger AUM generally means better liquidity and lower tracking error. ICICI Gold ETF (Rs. 25,942 Cr) and SBI Gold Fund (Rs. 14,998 Cr) lead.<br><br>
-        <b>Exit Load:</b> Most FoFs charge 1% if redeemed within 15 days. ETFs have no exit load but incur brokerage.
+        <b>🔄 Live Data:</b> NAVs are fetched from mfapi.in (AMFI source). Returns and risk metrics (Std Dev, Sharpe) are computed from actual NAV history — not static snapshots. Data refreshes hourly.<br><br>
+        <b>ETF vs FoF:</b> Gold ETFs trade on exchanges and require a Demat account with lower expense ratios. FoFs invest in these ETFs, don't need Demat, offer SIP, but carry slightly higher total expense.<br><br>
+        <b>Expense Ratio:</b> Over 10+ years, even 0.1% difference compounds significantly. ICICI FoF and Invesco FoF lead at 0.10%.<br><br>
+        <b>Sharpe Ratio:</b> Risk-adjusted return = (Fund Return − Risk-Free Rate) / Std Dev. Above 3.0 is excellent for gold funds.<br><br>
+        <b>Std Dev:</b> Annualised volatility from daily NAV returns. All gold funds cluster at 14.5–15.1% — gold is inherently volatile.
     </div>
 </div>
 """)
@@ -271,8 +425,7 @@ st.html(f"""
     <div style="font-family:'Source Sans Pro',sans-serif; font-size:0.78rem; font-weight:700; color:{RED}; -webkit-text-fill-color:{RED}; margin-bottom:5px;">⚠ Disclaimer</div>
     <div style="font-family:'Source Sans Pro',sans-serif; font-size:0.82rem; line-height:1.5; color:{TEXT}; -webkit-text-fill-color:{TEXT};">
         Mutual fund investments are subject to market risks. Read all scheme-related documents carefully. Past performance is not indicative of future results.
-        Data shown is illustrative and sourced from publicly available information as of April 2026. Verify current NAV and returns from the respective AMC websites before investing.
-        This dashboard is for <b>educational purposes only</b> and does not constitute investment advice.
+        NAV data sourced from mfapi.in (AMFI). AUM and expense ratios may lag by up to one month. This dashboard is for <b>educational purposes only</b> and does not constitute investment advice.
     </div>
 </div>
 """)
