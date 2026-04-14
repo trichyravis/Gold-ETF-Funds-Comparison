@@ -73,27 +73,36 @@ st.html(f"""
         color: {TEXT} !important; -webkit-text-fill-color: {TEXT} !important;
     }}
 
-    /* ── Selectbox DROPDOWN (popover/menu) contrast fix ── */
-    div[data-baseweb="popover"] {{
-        background-color: #1e2d42 !important;
+    /* ── DROPDOWN MENU — nuclear override for BaseWeb popover ── */
+    ul[role="listbox"] {{
+        background-color: #0f1d2f !important;
     }}
-    div[data-baseweb="popover"] li,
-    div[data-baseweb="popover"] li span,
-    div[data-baseweb="popover"] ul li,
-    div[data-baseweb="menu"] li,
-    div[data-baseweb="menu"] li span,
-    [data-baseweb="menu"] [role="option"],
-    [data-baseweb="menu"] [role="option"] span {{
+    ul[role="listbox"] li {{
         color: {TEXT} !important;
         -webkit-text-fill-color: {TEXT} !important;
-        background-color: transparent !important;
+        background-color: #0f1d2f !important;
     }}
-    [data-baseweb="menu"] [role="option"]:hover,
-    [data-baseweb="menu"] [role="option"][aria-selected="true"] {{
-        background-color: rgba(255,215,0,0.12) !important;
+    ul[role="listbox"] li:hover {{
+        background-color: rgba(255,215,0,0.15) !important;
         color: {GOLD} !important;
         -webkit-text-fill-color: {GOLD} !important;
     }}
+    ul[role="listbox"] li[aria-selected="true"] {{
+        background-color: rgba(255,215,0,0.10) !important;
+        color: {GOLD} !important;
+        -webkit-text-fill-color: {GOLD} !important;
+    }}
+    /* Catch-all for any nested spans/divs inside dropdown options */
+    ul[role="listbox"] li *,
+    div[data-baseweb="popover"] * {{
+        color: inherit !important;
+        -webkit-text-fill-color: inherit !important;
+    }}
+    div[data-baseweb="popover"] {{
+        background-color: #0f1d2f !important;
+        border: 1px solid rgba(255,215,0,0.2) !important;
+    }}
+
     /* Selected value inside the selectbox input area */
     div[data-baseweb="select"] > div {{
         background-color: rgba(0,51,102,0.5) !important;
