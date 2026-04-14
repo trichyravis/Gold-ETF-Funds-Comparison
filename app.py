@@ -184,13 +184,13 @@ FUND_META = {
 
 # Fallback static data (used if API is unavailable)
 FALLBACK_DATA = {
-    "ICICI Prudential Gold ETF FoF": {"nav": 48.14, "1y": 69.9, "3y": 34.0, "5y": 25.3, "std": 14.8, "sharpe": 2.98, "aum": 6535},
-    "ICICI Prudential Gold ETF": {"nav": 126.67, "1y": 63.3, "3y": 33.6, "5y": 24.9, "std": 14.5, "sharpe": 2.85, "aum": 25942},
-    "HDFC Gold Fund (FoF)": {"nav": 45.52, "1y": 68.9, "3y": 33.7, "5y": 25.2, "std": 14.9, "sharpe": 3.01, "aum": 11766},
-    "SBI Gold Fund": {"nav": 24.85, "1y": 69.1, "3y": 34.0, "5y": 25.1, "std": 14.7, "sharpe": 2.95, "aum": 14998},
-    "Nippon India Gold Savings Fund": {"nav": 56.66, "1y": 58.6, "3y": 32.1, "5y": 24.3, "std": 15.1, "sharpe": 2.78, "aum": 7223},
-    "Invesco India Gold ETF FoF": {"nav": 23.45, "1y": 67.1, "3y": 33.3, "5y": 24.7, "std": 14.6, "sharpe": 2.92, "aum": 1420},
-    "Aditya Birla SL Gold Fund": {"nav": 22.98, "1y": 69.5, "3y": 34.0, "5y": 25.5, "std": 14.8, "sharpe": 3.02, "aum": 1782},
+    "ICICI Prudential Gold ETF FoF": {"nav": 48.14, "1y": 69.9, "3y": 34.0, "5y": 25.3, "std": 14.8, "sharpe": 2.98, "aum": 6535, "max_dd": -14.2, "max_dd_date": "Mar 2021"},
+    "ICICI Prudential Gold ETF": {"nav": 126.67, "1y": 63.3, "3y": 33.6, "5y": 24.9, "std": 14.5, "sharpe": 2.85, "aum": 25942, "max_dd": -13.8, "max_dd_date": "Mar 2021"},
+    "HDFC Gold Fund (FoF)": {"nav": 45.52, "1y": 68.9, "3y": 33.7, "5y": 25.2, "std": 14.9, "sharpe": 3.01, "aum": 11766, "max_dd": -14.5, "max_dd_date": "Mar 2021"},
+    "SBI Gold Fund": {"nav": 24.85, "1y": 69.1, "3y": 34.0, "5y": 25.1, "std": 14.7, "sharpe": 2.95, "aum": 14998, "max_dd": -14.0, "max_dd_date": "Mar 2021"},
+    "Nippon India Gold Savings Fund": {"nav": 56.66, "1y": 58.6, "3y": 32.1, "5y": 24.3, "std": 15.1, "sharpe": 2.78, "aum": 7223, "max_dd": -15.3, "max_dd_date": "Mar 2021"},
+    "Invesco India Gold ETF FoF": {"nav": 23.45, "1y": 67.1, "3y": 33.3, "5y": 24.7, "std": 14.6, "sharpe": 2.92, "aum": 1420, "max_dd": -14.1, "max_dd_date": "Mar 2021"},
+    "Aditya Birla SL Gold Fund": {"nav": 22.98, "1y": 69.5, "3y": 34.0, "5y": 25.5, "std": 14.8, "sharpe": 3.02, "aum": 1782, "max_dd": -14.4, "max_dd_date": "Mar 2021"},
 }
 
 
@@ -251,6 +251,15 @@ def fetch_nav_data(scheme_code, fund_name):
         else:
             ann_std, sharpe = None, None
 
+        # Max Drawdown (full history)
+        df["peak"] = df["nav"].cummax()
+        df["drawdown"] = (df["nav"] - df["peak"]) / df["peak"] * 100  # negative %
+        max_dd = df["drawdown"].min()  # most negative value
+        max_dd_date = df.loc[df["drawdown"].idxmin(), "date"]
+
+        # Drawdown series for plotting (last 5 years)
+        df_dd = df[df["date"] >= latest_date - timedelta(days=365 * 5)][["date", "drawdown"]].copy()
+
         return {
             "nav": round(latest_nav, 2),
             "nav_date": latest_date.strftime("%d-%b-%Y"),
@@ -259,6 +268,9 @@ def fetch_nav_data(scheme_code, fund_name):
             "5y": round(ret_5y, 1) if ret_5y else None,
             "std": round(ann_std, 1) if ann_std else None,
             "sharpe": round(sharpe, 2) if sharpe else None,
+            "max_dd": round(max_dd, 2),
+            "max_dd_date": max_dd_date.strftime("%b %Y"),
+            "dd_series": df_dd,
             "live": True,
         }
     except Exception:
@@ -269,6 +281,7 @@ def fetch_nav_data(scheme_code, fund_name):
 data_source = "live"
 fund_rows = []
 nav_date = "N/A"
+dd_series_map = {}  # store drawdown time series per fund
 
 with st.spinner("Fetching live NAV data from mfapi.in..."):
     for name, code in SCHEME_CODES.items():
@@ -287,13 +300,17 @@ with st.spinner("Fetching live NAV data from mfapi.in..."):
                 "5Y CAGR (%)": result["5y"] if result["5y"] else fallback["5y"],
                 "Std Dev (%)": result["std"] if result["std"] else fallback["std"],
                 "Sharpe Ratio": result["sharpe"] if result["sharpe"] else fallback["sharpe"],
+                "Max Drawdown (%)": result.get("max_dd", fallback["max_dd"]),
+                "Max DD Date": result.get("max_dd_date", fallback["max_dd_date"]),
                 "Expense Ratio (%)": meta["expense"],
-                "AUM (Rs. Cr)": fallback["aum"],  # AUM not in mfapi
+                "AUM (Rs. Cr)": fallback["aum"],
                 "Exit Load": meta["exit_load"],
                 "Min SIP (Rs.)": meta["min_sip"],
                 "Min Lumpsum (Rs.)": meta["min_lump"],
             }
             nav_date = result.get("nav_date", nav_date)
+            if result.get("dd_series") is not None and len(result["dd_series"]) > 0:
+                dd_series_map[name] = result["dd_series"]
         else:
             data_source = "static"
             row = {
@@ -306,6 +323,8 @@ with st.spinner("Fetching live NAV data from mfapi.in..."):
                 "5Y CAGR (%)": fallback["5y"],
                 "Std Dev (%)": fallback["std"],
                 "Sharpe Ratio": fallback["sharpe"],
+                "Max Drawdown (%)": fallback["max_dd"],
+                "Max DD Date": fallback["max_dd_date"],
                 "Expense Ratio (%)": meta["expense"],
                 "AUM (Rs. Cr)": fallback["aum"],
                 "Exit Load": meta["exit_load"],
@@ -360,7 +379,7 @@ st.html(f"""<div style="font-family:'Playfair Display',serif; color:{GOLD}; -web
 
 fc1, fc2, fc3 = st.columns(3)
 with fc1:
-    sort_by = st.selectbox("Sort by", ["1Y Return (%)", "3Y CAGR (%)", "5Y CAGR (%)", "Sharpe Ratio", "Expense Ratio (%)", "AUM (Rs. Cr)", "Std Dev (%)"])
+    sort_by = st.selectbox("Sort by", ["1Y Return (%)", "3Y CAGR (%)", "5Y CAGR (%)", "Sharpe Ratio", "Max Drawdown (%)", "Expense Ratio (%)", "AUM (Rs. Cr)", "Std Dev (%)"])
 with fc2:
     sort_order = st.radio("Order", ["Descending", "Ascending"], horizontal=True)
 with fc3:
@@ -376,7 +395,7 @@ st.html(f"""<div style="font-family:'Playfair Display',serif; color:{GOLD}; -web
 
 display_cols = ["Fund Name", "Type", "NAV (Rs.)", "AUM (Rs. Cr)", "Expense Ratio (%)",
                 "1Y Return (%)", "3Y CAGR (%)", "5Y CAGR (%)", "Std Dev (%)", "Sharpe Ratio",
-                "Exit Load", "Min SIP (Rs.)", "Min Lumpsum (Rs.)"]
+                "Max Drawdown (%)", "Max DD Date", "Exit Load", "Min SIP (Rs.)", "Min Lumpsum (Rs.)"]
 st.dataframe(filtered[display_cols], use_container_width=True, hide_index=True, height=320)
 
 # ══════════════════════════════════════════════════════════
@@ -456,6 +475,104 @@ with rc2:
     st.plotly_chart(fig6, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════
+#  MAX DRAWDOWN ANALYSIS
+# ══════════════════════════════════════════════════════════
+st.html(f"""<div style="font-family:'Playfair Display',serif; color:{GOLD}; -webkit-text-fill-color:{GOLD}; font-size:1.1rem; margin:18px 0 6px; user-select:none;">📉 Maximum Drawdown Analysis</div>""")
+
+st.html(f"""<div style="font-family:'Source Sans Pro',sans-serif; color:{MUTED}; -webkit-text-fill-color:{MUTED}; font-size:0.84rem; margin-bottom:12px; user-select:none;">
+    Max Drawdown = largest peak-to-trough decline (%). Measures the worst loss an investor would have experienced. Lower (closer to 0%) is better.
+</div>""")
+
+# Bar chart: Max Drawdown comparison
+sorted_dd = filtered.sort_values("Max Drawdown (%)", ascending=False)  # least negative first = best
+fig_dd = go.Figure(layout=base_layout("Max Drawdown by Fund (Closer to 0% = Better)", "", "Max Drawdown (%)", height=380))
+colors_dd = [GREEN if v >= -13.0 else (HULL_AMBER if v >= -14.5 else RED) for v in sorted_dd["Max Drawdown (%)"]]
+fig_dd.add_trace(go.Bar(
+    y=sorted_dd["Fund Name"].str[:20],
+    x=sorted_dd["Max Drawdown (%)"],
+    orientation='h',
+    marker_color=colors_dd,
+    text=sorted_dd.apply(lambda r: f"{r['Max Drawdown (%)']:.1f}% ({r['Max DD Date']})", axis=1),
+    textposition="outside",
+    textfont=dict(color=TEXT, size=10),
+))
+fig_dd.update_layout(yaxis=dict(autorange="reversed"))
+fig_dd.update_xaxes(range=[min(sorted_dd["Max Drawdown (%)"]) - 3, 0])
+st.plotly_chart(fig_dd, use_container_width=True)
+
+# Drawdown timeline charts (only if live data with dd_series is available)
+if dd_series_map:
+    st.html(f"""<div style="font-family:'Source Sans Pro',sans-serif; color:{LIGHT_BLUE}; -webkit-text-fill-color:{LIGHT_BLUE}; font-size:0.95rem; font-weight:600; margin:14px 0 8px; user-select:none;">
+        Drawdown Over Time (Last 5 Years) — From Live NAV History
+    </div>""")
+
+    # Overlay chart: all funds on one drawdown timeline
+    fig_dd_overlay = go.Figure(layout=base_layout(
+        "Drawdown Timeline — All Funds Overlaid", "Date", "Drawdown (%)", height=450))
+
+    dd_colors = [GOLD, LIGHT_BLUE, GREEN, RED, HULL_AMBER, MID_BLUE, "#FF69B4"]
+    for idx, (fund_name, dd_df) in enumerate(dd_series_map.items()):
+        if fund_name in fund_filter:
+            fig_dd_overlay.add_trace(go.Scatter(
+                x=dd_df["date"], y=dd_df["drawdown"],
+                mode="lines", name=fund_name[:20],
+                line=dict(color=dd_colors[idx % len(dd_colors)], width=1.8),
+                fill="tozeroy",
+                fillcolor=f"rgba({int(dd_colors[idx % len(dd_colors)].lstrip('#')[0:2], 16)},{int(dd_colors[idx % len(dd_colors)].lstrip('#')[2:4], 16)},{int(dd_colors[idx % len(dd_colors)].lstrip('#')[4:6], 16)},0.05)",
+                hovertemplate=f"<b>{fund_name[:20]}</b><br>Date: %{{x|%b %Y}}<br>Drawdown: %{{y:.1f}}%<extra></extra>",
+            ))
+
+    fig_dd_overlay.add_shape(type="line", x0=0, x1=1, xref="paper", y0=0, y1=0,
+                             line=dict(color=MUTED, width=0.5, dash="dot"))
+    fig_dd_overlay.update_yaxes(ticksuffix="%")
+    st.plotly_chart(fig_dd_overlay, use_container_width=True)
+
+    # Individual fund drawdown charts (2 per row)
+    st.html(f"""<div style="font-family:'Source Sans Pro',sans-serif; color:{LIGHT_BLUE}; -webkit-text-fill-color:{LIGHT_BLUE}; font-size:0.95rem; font-weight:600; margin:14px 0 8px; user-select:none;">
+        Individual Fund Drawdown Profiles
+    </div>""")
+
+    selected_dd_funds = [f for f in fund_filter if f in dd_series_map]
+    for i in range(0, len(selected_dd_funds), 2):
+        cols = st.columns(2)
+        for j, col in enumerate(cols):
+            if i + j < len(selected_dd_funds):
+                fname = selected_dd_funds[i + j]
+                dd_df = dd_series_map[fname]
+                with col:
+                    fig_ind = go.Figure(layout=base_layout(
+                        fname[:25], "", "Drawdown (%)", height=280))
+                    fig_ind.add_trace(go.Scatter(
+                        x=dd_df["date"], y=dd_df["drawdown"],
+                        mode="lines", line=dict(color=RED, width=1.5),
+                        fill="tozeroy", fillcolor="rgba(220,53,69,0.12)",
+                        hovertemplate="Date: %{x|%b %Y}<br>Drawdown: %{y:.1f}%<extra></extra>",
+                        showlegend=False,
+                    ))
+                    # Mark the max drawdown point
+                    min_idx = dd_df["drawdown"].idxmin()
+                    fig_ind.add_trace(go.Scatter(
+                        x=[dd_df.loc[min_idx, "date"]],
+                        y=[dd_df.loc[min_idx, "drawdown"]],
+                        mode="markers+text",
+                        marker=dict(color=GOLD, size=10, symbol="diamond", line=dict(color=RED, width=2)),
+                        text=[f"{dd_df.loc[min_idx, 'drawdown']:.1f}%"],
+                        textposition="top center",
+                        textfont=dict(color=GOLD, size=11),
+                        showlegend=False,
+                        hovertemplate=f"Max DD: {dd_df.loc[min_idx, 'drawdown']:.1f}%<br>Date: %{{x|%d %b %Y}}<extra></extra>",
+                    ))
+                    fig_ind.add_shape(type="line", x0=0, x1=1, xref="paper", y0=0, y1=0,
+                                     line=dict(color=MUTED, width=0.5, dash="dot"))
+                    fig_ind.update_yaxes(ticksuffix="%")
+                    fig_ind.update_layout(margin=dict(l=45, r=15, t=40, b=35))
+                    st.plotly_chart(fig_ind, use_container_width=True)
+else:
+    st.html(f"""<div style="font-family:'Source Sans Pro',sans-serif; color:{MUTED}; -webkit-text-fill-color:{MUTED}; font-size:0.82rem; margin:8px 0; user-select:none;">
+        ℹ Drawdown timeline charts require live NAV data from mfapi.in. Deploy on Streamlit Cloud to see interactive drawdown timelines for each fund.
+    </div>""")
+
+# ══════════════════════════════════════════════════════════
 #  EDUCATIONAL NOTES
 # ══════════════════════════════════════════════════════════
 st.html(f"""
@@ -466,7 +583,8 @@ st.html(f"""
         <b>ETF vs FoF:</b> Gold ETFs trade on exchanges and require a Demat account with lower expense ratios. FoFs invest in these ETFs, don't need Demat, offer SIP, but carry slightly higher total expense.<br><br>
         <b>Expense Ratio:</b> Over 10+ years, even 0.1% difference compounds significantly. ICICI FoF and Invesco FoF lead at 0.10%.<br><br>
         <b>Sharpe Ratio:</b> Risk-adjusted return = (Fund Return − Risk-Free Rate) / Std Dev. Above 3.0 is excellent for gold funds.<br><br>
-        <b>Std Dev:</b> Annualised volatility from daily NAV returns. All gold funds cluster at 14.5–15.1% — gold is inherently volatile.
+        <b>Std Dev:</b> Annualised volatility from daily NAV returns. All gold funds cluster at 14.5–15.1% — gold is inherently volatile.<br><br>
+        <b>📉 Max Drawdown:</b> The worst peak-to-trough decline in NAV history. Tells you the maximum loss you could have faced if you bought at the peak and sold at the trough. Most gold funds saw their worst drawdown during the 2021 gold correction. Lower (closer to 0%) is better.
     </div>
 </div>
 """)
