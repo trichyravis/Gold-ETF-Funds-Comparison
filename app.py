@@ -237,7 +237,9 @@ def fetch_full_nav_history(scheme_code, fund_name):
             except (ValueError, KeyError):
                 continue
 
-        df = pd.DataFrame(records).sort_values("date").reset_index(drop=True)
+        df = pd.DataFrame(records)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date").drop_duplicates(subset="date").reset_index(drop=True)
         return df
     except Exception:
         return None
@@ -249,7 +251,7 @@ def compute_metrics(df):
         return None
 
     latest_nav = df.iloc[-1]["nav"]
-    latest_date = df.iloc[-1]["date"]
+    latest_date = pd.Timestamp(df.iloc[-1]["date"])
 
     def find_nav_near(target_date):
         mask = df["date"] <= target_date
@@ -504,18 +506,38 @@ with main_tabs[1]:
 
         lookback_days = period_map[selected_period]
 
+        # Use a GLOBAL cutoff date (most recent NAV date across all funds)
+        global_latest = datetime(2020, 1, 1)
+        for fn in fund_filter:
+            ndf = all_nav_histories.get(fn)
+            if ndf is not None and len(ndf) > 0:
+                fund_latest = pd.Timestamp(ndf.iloc[-1]["date"]).to_pydatetime()
+                if fund_latest > global_latest:
+                    global_latest = fund_latest
+
+        if lookback_days:
+            global_cutoff = global_latest - timedelta(days=lookback_days)
+        else:
+            global_cutoff = None
+
         # ── OVERLAY CHART: All selected funds on one plot ──
         fig_nav = go.Figure(layout=base_layout(
-            f"NAV Movement — {selected_period}", "Date", "NAV (₹)" if chart_type=="Absolute NAV" else "Value (₹100 base)", 480))
+            f"NAV Movement — {selected_period}", "Date",
+            "NAV (₹)" if chart_type=="Absolute NAV" else "Value (₹100 base)", 480))
 
         for fund_name in fund_filter:
             nav_df = all_nav_histories.get(fund_name)
             if nav_df is None or len(nav_df) < 10:
                 continue
 
-            latest_date = nav_df.iloc[-1]["date"]
-            if lookback_days:
-                plot_df = nav_df[nav_df["date"] >= latest_date - timedelta(days=lookback_days)].copy()
+            # Ensure date column is datetime
+            if not pd.api.types.is_datetime64_any_dtype(nav_df["date"]):
+                nav_df = nav_df.copy()
+                nav_df["date"] = pd.to_datetime(nav_df["date"])
+
+            # Filter to selected period using GLOBAL cutoff
+            if global_cutoff:
+                plot_df = nav_df[nav_df["date"] >= pd.Timestamp(global_cutoff)].copy()
             else:
                 plot_df = nav_df.copy()
 
@@ -524,8 +546,10 @@ with main_tabs[1]:
 
             if chart_type == "Normalised (₹100)":
                 base_nav = plot_df.iloc[0]["nav"]
-                plot_df = plot_df.copy()
-                plot_df["nav_plot"] = (plot_df["nav"] / base_nav) * 100
+                if base_nav > 0:
+                    plot_df["nav_plot"] = (plot_df["nav"] / base_nav) * 100
+                else:
+                    continue
                 y_col = "nav_plot"
             else:
                 y_col = "nav"
@@ -551,10 +575,13 @@ with main_tabs[1]:
                 if i + j < len(active_funds):
                     fname = active_funds[i + j]
                     nav_df = all_nav_histories[fname]
-                    latest_date = nav_df.iloc[-1]["date"]
 
-                    if lookback_days:
-                        pdf = nav_df[nav_df["date"] >= latest_date - timedelta(days=lookback_days)].copy()
+                    if not pd.api.types.is_datetime64_any_dtype(nav_df["date"]):
+                        nav_df = nav_df.copy()
+                        nav_df["date"] = pd.to_datetime(nav_df["date"])
+
+                    if global_cutoff:
+                        pdf = nav_df[nav_df["date"] >= pd.Timestamp(global_cutoff)].copy()
                     else:
                         pdf = nav_df.copy()
 
